@@ -1,0 +1,94 @@
+<odoo>
+  <data>
+    <!-- explicit list view definition -->
+    <record model="ir.ui.view" id="films.cinema_list">
+      <field name="name">films.cinema.list</field>
+      <field name="model">films.cinema</field>
+      <field name="arch" type="xml">
+        <tree>
+          <field name="name"/>
+          <field name="film_ids"/>
+        </tree>
+      </field>
+    </record>
+
+    <record model="ir.ui.view" id="films.film_list">
+      <field name="name">films.film.list</field>
+      <field name="model">films.film</field>
+      <field name="arch" type="xml">
+        <tree>
+          <field name="name"/>
+          <field name="poster"/>
+          <field name="cinema_ids"/>
+        </tree>
+      </field>
+    </record>
+
+
+    <!-- explicit form view definition -->
+    <record model="ir.ui.view" id="films.cinema_form">
+      <field name="name">films.cinema.form</field>
+      <field name="model">films.cinema</field>
+      <field name="arch" type="xml">
+        <form>
+          <sheet>
+            <field name="name"/>
+            <notebook>
+              <page string="Фильмы">
+                <field name="film_ids"/>
+              </page>
+            </notebook>
+          </sheet>
+        </form>
+      </field>
+    </record>
+
+    <record model="ir.ui.view" id="films.film_form">
+      <field name="name">films.film.form</field>
+      <field name="model">films.film</field>
+      <field name="arch" type="xml">
+        <form>
+          <group col="2">
+            <group>
+              <field name="name"/>
+            </group>
+            <group>
+              <field name="poster"/>
+            </group>
+          </group>
+          <notebook>
+            <page string="В кинотеатрах">
+              <field name="cinema_ids"/>
+            </page>
+          </notebook>
+        </form>
+      </field>
+    </record>
+
+
+    <!-- actions opening views on models -->
+    <record model="ir.actions.act_window" id="films.cinema_action">
+      <field name="name">Кинотеатры</field>
+      <field name="res_model">films.cinema</field>
+      <field name="view_mode">tree,form</field>
+    </record>
+
+    <record model="ir.actions.act_window" id="films.film_action">
+      <field name="name">Фильмы</field>
+      <field name="res_model">films.film</field>
+      <field name="view_mode">tree,form</field>
+    </record>
+
+    <!-- Top menu item -->
+    <menuitem name="Кино" id="films.menu_root" sequence="0"/>
+
+    <!-- menu categories -->
+    <menuitem name="Кинотеатры" id="films.cinema_menu" parent="films.menu_root" action="films.cinema_action"/>
+    <menuitem name="Фильмы" id="films.film_menu" parent="films.menu_root"/>
+      <menuitem name="Список" id="films.film_list_menu" parent="films.film_menu"
+                action="films.film_action"/>
+      <menuitem name="Добавить фильм" id="films.film_add_menu" parent="films.film_menu"
+                action="films.add_film_action"/>
+
+  </data>
+</odoo>
