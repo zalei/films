@@ -17,6 +17,7 @@
       <field name="model">films.film</field>
       <field name="arch" type="xml">
         <tree>
+          <field name="remote_film_id"/>
           <field name="name"/>
           <field name="poster"/>
           <field name="cinema_ids"/>
@@ -50,6 +51,7 @@
         <form>
           <group col="2">
             <group>
+              <field name="remote_film_id"/>
               <field name="name"/>
             </group>
             <group>
@@ -87,8 +89,6 @@
     <menuitem name="Фильмы" id="films.film_menu" parent="films.menu_root"/>
       <menuitem name="Список" id="films.film_list_menu" parent="films.film_menu"
                 action="films.film_action"/>
-      <menuitem name="Добавить фильм" id="films.film_add_menu" parent="films.film_menu"
-                action="films.add_film_action"/>
 
   </data>
 </odoo>
