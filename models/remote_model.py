@@ -13,8 +13,6 @@ from odoo.exceptions import AccessError, MissingError
 
 headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
 
-URL_KP_ID_LIST = "https://kinobd.net/kp_id_list.txt"  # Список ID (Kinopoisk ID) фильмов, плееры для которых есть в БД
-
 class RemoteModel(models.BaseModel):
     _auto = True
     _register = False
@@ -23,11 +21,6 @@ class RemoteModel(models.BaseModel):
     _remote = True
     _log_access = False
     _remote_film_kp_id_list = []
-
-    def update_remote_film_kp_id_list(self):
-        response = requests.get(URL_KP_ID_LIST)
-        print(response.text)
-        self._remote_film_kp_id_list = list(response.text)
 
     _read_microservice = ""
     _search_microservice = ""
@@ -39,7 +32,7 @@ class RemoteModel(models.BaseModel):
 
     def _call_rpc(self, rpc_class, rpc_method, *args, **kwargs):
         try:
-            print(f'********** _call_rpc: [{rpc_method.upper()}]: {args} {kwargs} **********')
+            # print(f'********** _call_rpc: [{rpc_method.upper()}]: {args} {kwargs} **********')
             if rpc_class == 'kinobd':
                 if rpc_method == 'listSearch':
                     if len(args[3]):
@@ -54,16 +47,17 @@ class RemoteModel(models.BaseModel):
                         result = [film['id'] for film in result_search_json[0:3]]
 
                 elif rpc_method == 'listRead':
+                    # Найдем, какие страницы нужно считать с api, т.к. к api не нашел документации и поиска по id:
+                    # из-за пропусков и/или лишних id можно не "попасть" в страницу, особенно если она находится в конце
                     read_film_ids = list(args[0])
                     read_film_data = []
-                    # Найдем, какие страницы нужно считать с api, т.к. к api не нашел документации и поиска по id:
                     set_of_pages = set([])
                     for film_id in read_film_ids:
                         # страница page в ссылке "https://kinobd.ru/api/films?page=...", на которой находится film_id
                         page_of_film_id = (film_id - 1) // 50 + 1
                         set_of_pages |= set([page_of_film_id])
 
-                    print(f'*** film_ids: {read_film_ids} найдены на {set_of_pages} страницах')
+                    # print(f'*** film_ids: {read_film_ids} найдены на {set_of_pages} страницах')
                     for page in set_of_pages:
                         response = requests.get(f"https://kinobd.ru/api/films?page={page}", headers=headers)
                         film_ids = json.loads(response.text)['data']
@@ -76,22 +70,12 @@ class RemoteModel(models.BaseModel):
         except Exception as exc:
             logging.error(f"===== RUN RPC ERROR:{rpc_class}.{rpc_method} - {str(exc)}")
             raise MissingError(f"Ошибка: {rpc_class}.{rpc_method} - {str(exc)}")
-        print('len(result) of [_call_rpc]', len(result))
+        # print('len(result) of [_call_rpc]', len(result))
         return result
 
 
     @api.model
     def _search(self, args, offset=0, limit=None, order=None, count=False, access_rights_uid=None):
-        """
-        Private implementation of search() method, allowing specifying the uid to use for the access right check.
-        This is useful for example when filling in the selection list for a drop-down and avoiding access rights errors,
-        by specifying ``access_rights_uid=1`` to bypass access rights check, but not ir.rules!
-        This is ok at the security level because this method is private and not callable through XML-RPC.
-
-        :param access_rights_uid: optional user ID to use when checking access rights
-                                  (not for ir.rules, this is only for ir.model.access)
-        :return: a list of record ids or an integer (if count is True)
-        """
         (rpc_class, rpc_search_method) = self._search_microservice.split(".")
         if not rpc_class or not rpc_search_method:
             raise MissingError(_("У модели нет свойства _search_microservice"))
@@ -100,20 +84,16 @@ class RemoteModel(models.BaseModel):
         self._flush_search(args, order=order)
 
         query = self._call_rpc(rpc_class, rpc_search_method, True, None, None, args)  # list of record ids
-        # print('_search query?', query)
-        # return query if isinstance(query, int) else query
 
         # возвращает запрос к БД в случае локальной модели и строку для поиска в случае kinobd
-        print('***[_search]*** return list of record ids:', query)
+        # print('***[_search]*** return list of record ids:', query)
         return query
 
     def _read(self, fields, **kwargs):
         """
         Переопределение приватного чтения полей BaseModel.
-        для получение дынных по id записей из вызова микросервисов Nameko
+        для получение дынных по id записей
         """
-        # print(fields)
-        # print(kwargs)
         if not self:
             return
         self.check_access_rights("read")
