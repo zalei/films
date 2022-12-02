@@ -3,7 +3,7 @@
     <!-- explicit list view definition -->
     <record model="ir.ui.view" id="films.cinema_list">
       <field name="name">films.cinema.list</field>
-      <field name="model">films.cinema</field>
+      <field name="model">res.company</field>
       <field name="arch" type="xml">
         <tree>
           <field name="name"/>
@@ -17,7 +17,7 @@
       <field name="model">films.film</field>
       <field name="arch" type="xml">
         <tree>
-          <field name="remote_film_id"/>
+          <!-- <field name="remote_film_id"/> -->
           <field name="name"/>
           <field name="poster"/>
           <field name="cinema_ids"/>
@@ -27,9 +27,10 @@
 
 
     <!-- explicit form view definition -->
+
     <record model="ir.ui.view" id="films.cinema_form">
       <field name="name">films.cinema.form</field>
-      <field name="model">films.cinema</field>
+      <field name="model">res.company</field>
       <field name="arch" type="xml">
         <form>
           <sheet>
@@ -40,6 +41,9 @@
               </page>
             </notebook>
           </sheet>
+          <group>
+            <field name="is_cinema"/>
+          </group>
         </form>
       </field>
     </record>
@@ -49,18 +53,35 @@
       <field name="model">films.film</field>
       <field name="arch" type="xml">
         <form>
+          <div class="oe_edit_only">
+            <label for="remote_film_id" class="o_light_label"/>
+            <field  name="remote_film_id" options="{'no_create_edit': True,'no_quick_create': True}"/>
+          </div>
           <group col="2">
             <group>
-              <field name="remote_film_id"/>
-              <field name="name"/>
+              <field name="name" attrs="{'invisible': [('name', '=', False)]}"/>
+              <field name="description" attrs="{'invisible': [('description', '=', False)]}"/>
+              <field name="country_ru" attrs="{'invisible': [('country_ru', '=', False)]}"/>
+              <field name="year_start" attrs="{'invisible': [('year_start', '=', False)]}"/>
             </group>
             <group>
-              <field name="poster"/>
+              <field name="poster_url" invisible="1"/>
+              <field name="poster" widget='image' attrs="{'invisible': [('poster_url', '=', False)]}"/>
             </group>
           </group>
           <notebook>
             <page string="В кинотеатрах">
               <field name="cinema_ids"/>
+            </page>
+            <page string="Просмотры">
+              <field name="show_film_ids">
+                <tree editable="bottom">
+                  <field name="user_id" readonly="1" force_save="1"/>
+                  <field name="cinema_id" domain="[('id', 'in', film_in_cinema_ids)]"/>
+                  <field name="film_in_cinema_ids" invisible="1"/>
+                  <field name="date" readonly="1" force_save="1"/>
+                </tree>
+              </field>
             </page>
           </notebook>
         </form>
@@ -71,9 +92,25 @@
     <!-- actions opening views on models -->
     <record model="ir.actions.act_window" id="films.cinema_action">
       <field name="name">Кинотеатры</field>
-      <field name="res_model">films.cinema</field>
+      <field name="res_model">res.company</field>
       <field name="view_mode">tree,form</field>
+      <field name="view_id" ref="films.cinema_list"/>
+      <field name="domain">[('is_cinema','=',True)]</field>
     </record>
+
+      <record model="ir.actions.act_window.view" id="cinema_binding_action_tree">
+           <field name="sequence" eval="1"/>
+           <field name="view_mode">tree</field>
+           <field name="view_id" ref="films.cinema_list"/>
+           <field name="act_window_id" ref="films.cinema_action"/>
+      </record>
+
+      <record model="ir.actions.act_window.view" id="cinema_binding_action_form">
+           <field name="sequence" eval="2"/>
+           <field name="view_mode">form</field>
+           <field name="view_id" ref="films.cinema_form"/>
+           <field name="act_window_id" ref="films.cinema_action"/>
+      </record>
 
     <record model="ir.actions.act_window" id="films.film_action">
       <field name="name">Фильмы</field>

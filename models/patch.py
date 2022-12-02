@@ -55,7 +55,7 @@ def update_db_foreign_keys(self, model):
 
 def read(self, records):
     """
-    в случае если оно ссылается на микросервисную модель
+    в случае если ссылается на микросервисную модель
     """
     context = {"active_test": False}
     context.update(self.context)

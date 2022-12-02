@@ -1,5 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-films.access_cinema,access_films_cinema,films.model_films_cinema,base.group_user,1,1,1,1
 films.access_film,access_films_film,films.model_films_film,base.group_user,1,1,1,1
 films.access_show_film,access_films_show_film,films.model_films_show_film,base.group_user,1,1,1,1
 films.access_remote_film,access_films_remote_film,films.model_films_remote_film,base.group_user,1,1,1,1
