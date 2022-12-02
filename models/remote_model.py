@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 #  Native odoo microservice class
+import aiohttp
+import asyncio
+
 import json
 import logging
 
@@ -12,6 +15,7 @@ from odoo.tools.translate import _
 from odoo.exceptions import AccessError, MissingError
 
 headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
+sleep_delay_for_no_block = 15
 
 class RemoteModel(models.BaseModel):
     _auto = True
@@ -30,41 +34,86 @@ class RemoteModel(models.BaseModel):
         return cls._remote
 
 
+    def notify_too_many_requests(self):
+        message = 'Слишком много запросов к сайту https://kinobd.net, делаем паузу между запросами, имейте терпение.'
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'message': message,
+                'type': 'warning',
+                'sticky': False,
+            },
+        }
+
+    async def get_data_from_api(self, session, url):
+        read_film_data_text = 'Too Many Requests'
+        while read_film_data_text and 'Too Many Requests' in read_film_data_text:
+            async with session.get(url) as resp:
+                read_film_data_text = await resp.text()
+                try:
+                    read_film_data = json.loads(read_film_data_text)['data'][0]
+                    read_film_data['id'] = read_film_data['kinopoisk_id']
+                    del read_film_data['kinopoisk_id']
+                    return read_film_data
+                except Exception as err:
+                    # print(f"Ошибка в json-данных для [{read_film_data_text}]: {err}")
+                    if 'Too Many Requests' not in read_film_data_text:
+                        return False
+                    else:
+                        self.notify_too_many_requests()
+                        await asyncio.sleep(sleep_delay_for_no_block)
+
+
+    async def get_datas_from_api(self, kinopoisk_ids):
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            for kinopoisk_id in kinopoisk_ids:
+                url = f"https://kinobd.net/api/films/search/kp_id?q={kinopoisk_id}"
+                tasks.append(asyncio.ensure_future(self.get_data_from_api(session, url)))
+
+            # print(f"ВСЕГО ПАРАЛЛЕЛЬНЫХ ЗАДАЧ ДЛЯ API: {len(tasks)}")  # 50...
+            read_films_data = list(await asyncio.gather(*tasks))
+        return read_films_data
+
+
     def _call_rpc(self, rpc_class, rpc_method, *args, **kwargs):
         try:
             # print(f'********** _call_rpc: [{rpc_method.upper()}]: {args} {kwargs} **********')
             if rpc_class == 'kinobd':
                 if rpc_method == 'listSearch':
+                    kinopoisk_ids = []
                     if len(args[3]):
-                        name_russian_search = args[3][0][2]  # слово поиска
-                        response = requests.get(f"https://kinobd.net/api/films/search/title?q={name_russian_search}",
-                                                headers=headers)
-                        result_search_json = json.loads(response.text)['data']
-                        result = [film['id'] for film in result_search_json[0:3]]
+                        for domain in args[3]:
+                            # т.к. при поиске только по одному полю M2O применяется оператор '&' - пропускаем его,
+                            # организовав логику нахождения нужных id.
+                            # Поиск производится только по 'name_russian'
+                            if len(domain) == 3:
+                                if domain[0] == 'id':  # ['id', 'in', ids]
+                                    kinopoisk_ids = list(set(kinopoisk_ids) & set(domain[2])) if kinopoisk_ids else domain[2]
+                                elif domain[0] == 'name_russian':  # ['name_russian', 'ilike', 'слово поиска']
+                                    name_russian_search = domain[2]
+                                    response = requests.get(
+                                        f"https://kinobd.net/api/films/search/title?q={name_russian_search}",
+                                        headers=headers)
+                                    try:
+                                        result_search_json = json.loads(response.text)['data']
+                                    except Exception as err:
+                                        print(f"Ошибка в json-данных для [{response.text}]: {err}")
+                                    result = [film['kinopoisk_id'] for film in result_search_json if film['kinopoisk_id']]
+                                    kinopoisk_ids = list(set(kinopoisk_ids) & set(result)) if kinopoisk_ids else result
+                        result = kinopoisk_ids
                     else:
+                        # пустой запрос...
                         response = requests.get("https://kinobd.ru/api/films", headers=headers)
                         result_search_json = json.loads(response.text)['data']
-                        result = [film['id'] for film in result_search_json[0:3]]
+                        result = [film['kinopoisk_id'] for film in result_search_json if film['kinopoisk_id']]
 
                 elif rpc_method == 'listRead':
-                    # Найдем, какие страницы нужно считать с api, т.к. к api не нашел документации и поиска по id:
-                    # из-за пропусков и/или лишних id можно не "попасть" в страницу, особенно если она находится в конце
+                    # примерная страница page в ссылке "https://kinobd.ru/api/films?page=...", на которой находится film_id
                     read_film_ids = list(args[0])
-                    read_film_data = []
-                    set_of_pages = set([])
-                    for film_id in read_film_ids:
-                        # страница page в ссылке "https://kinobd.ru/api/films?page=...", на которой находится film_id
-                        page_of_film_id = (film_id - 1) // 50 + 1
-                        set_of_pages |= set([page_of_film_id])
-
-                    # print(f'*** film_ids: {read_film_ids} найдены на {set_of_pages} страницах')
-                    for page in set_of_pages:
-                        response = requests.get(f"https://kinobd.ru/api/films?page={page}", headers=headers)
-                        film_ids = json.loads(response.text)['data']
-                        for film_id in film_ids:
-                            if film_id['id'] in read_film_ids:
-                                read_film_data.append(film_id)
-                    result = read_film_data  # list of dict
+                    read_films_data = asyncio.run(self.get_datas_from_api(read_film_ids))
+                    result = [read_film_data for read_film_data in read_films_data if read_film_data]
             else:
                 result = []
         except Exception as exc:
@@ -80,13 +129,20 @@ class RemoteModel(models.BaseModel):
         if not rpc_class or not rpc_search_method:
             raise MissingError(_("У модели нет свойства _search_microservice"))
 
-        # the flush must be done before the _where_calc(), as the latter can do some selects
+        model = self.with_user(access_rights_uid) if access_rights_uid else self
+        model.check_access_rights("read")
         self._flush_search(args, order=order)
+        query = self._where_calc(args)
+        self._apply_ir_rules(query, "read")
 
-        query = self._call_rpc(rpc_class, rpc_search_method, True, None, None, args)  # list of record ids
+        if expression.is_false(self, args):
+            return 0 if count else []
 
-        # возвращает запрос к БД в случае локальной модели и строку для поиска в случае kinobd
-        # print('***[_search]*** return list of record ids:', query)
+        if count:
+            query = self._call_rpc(rpc_class, rpc_search_method, True, None, None, args)
+            return query if isinstance(query, int) else len(query)
+
+        query = self._call_rpc(rpc_class, rpc_search_method, False, limit, offset, args)
         return query
 
     def _read(self, fields, **kwargs):
@@ -94,6 +150,7 @@ class RemoteModel(models.BaseModel):
         Переопределение приватного чтения полей BaseModel.
         для получение дынных по id записей
         """
+
         if not self:
             return
         self.check_access_rights("read")
@@ -144,7 +201,7 @@ class RemoteModel(models.BaseModel):
             for sub_ids in cr.split_for_in_conditions(self.ids):
                 (rpc_class, rpc_read_method) = self._read_microservice.split(".")
                 if not rpc_class or not rpc_read_method:
-                    raise MissingError(_("У вашей модели нет свойства _read_microservice"))
+                    raise MissingError(_("У модели нет свойства _read_microservice"))
                 results = self._call_rpc(rpc_class, rpc_read_method, sub_ids)
                 result = []
                 for res in results:

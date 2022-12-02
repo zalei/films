@@ -37,7 +37,7 @@
             <field name="name"/>
             <notebook>
               <page string="Фильмы">
-                <field name="film_ids"/>
+                <field name="film_ids" context="{'cinema_id': id}"/>
               </page>
             </notebook>
           </sheet>
@@ -74,7 +74,7 @@
               <field name="cinema_ids"/>
             </page>
             <page string="Просмотры">
-              <field name="show_film_ids">
+              <field name="show_film_ids" context="{'default_cinema_id': context.get('cinema_id')}">
                 <tree editable="bottom">
                   <field name="user_id" readonly="1" force_save="1"/>
                   <field name="cinema_id" domain="[('id', 'in', film_in_cinema_ids)]"/>
