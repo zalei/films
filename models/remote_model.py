@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #  Native odoo microservice class
-import aiohttp
-import asyncio
+import time
+from concurrent import futures
 
 import json
 import logging
@@ -15,7 +15,7 @@ from odoo.tools.translate import _
 from odoo.exceptions import AccessError, MissingError
 
 headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
-sleep_delay_for_no_block = 15
+sleep_delay_for_no_block = 5
 
 class RemoteModel(models.BaseModel):
     _auto = True
@@ -46,36 +46,25 @@ class RemoteModel(models.BaseModel):
             },
         }
 
-    async def get_data_from_api(self, session, url):
-        read_film_data_text = 'Too Many Requests'
-        while read_film_data_text and 'Too Many Requests' in read_film_data_text:
-            async with session.get(url) as resp:
-                read_film_data_text = await resp.text()
-                try:
-                    read_film_data = json.loads(read_film_data_text)['data'][0]
-                    read_film_data['id'] = read_film_data['kinopoisk_id']
-                    del read_film_data['kinopoisk_id']
-                    return read_film_data
-                except Exception as err:
-                    # print(f"Ошибка в json-данных для [{read_film_data_text}]: {err}")
-                    if 'Too Many Requests' not in read_film_data_text:
-                        return False
-                    else:
-                        self.notify_too_many_requests()
-                        await asyncio.sleep(sleep_delay_for_no_block)
-
-
-    async def get_datas_from_api(self, kinopoisk_ids):
-        async with aiohttp.ClientSession() as session:
-            tasks = []
-            for kinopoisk_id in kinopoisk_ids:
-                url = f"https://kinobd.net/api/films/search/kp_id?q={kinopoisk_id}"
-                tasks.append(asyncio.ensure_future(self.get_data_from_api(session, url)))
-
-            # print(f"ВСЕГО ПАРАЛЛЕЛЬНЫХ ЗАДАЧ ДЛЯ API: {len(tasks)}")  # 50...
-            read_films_data = list(await asyncio.gather(*tasks))
-        return read_films_data
-
+    def get_film_data_from_api(self, kinopoisk_id):
+        response_text = 'Too Many Requests'
+        while response_text and 'Too Many Requests' in response_text:
+            response = requests.get(
+                f"https://kinobd.net/api/films/search/kp_id?q={kinopoisk_id}",
+                headers=headers)
+            response_text = response.text
+            try:
+                read_film_data = json.loads(response_text)['data'][0]
+                read_film_data['id'] = read_film_data['kinopoisk_id']
+                del read_film_data['kinopoisk_id']
+                return read_film_data
+            except Exception as err:
+                # print(f"Ошибка в json-данных для [{response_text}]: {err}")
+                if 'Too Many Requests' not in response_text:
+                    return False
+                else:
+                    self.notify_too_many_requests()
+                    time.sleep(sleep_delay_for_no_block)
 
     def _call_rpc(self, rpc_class, rpc_method, *args, **kwargs):
         try:
@@ -99,7 +88,7 @@ class RemoteModel(models.BaseModel):
                                     try:
                                         result_search_json = json.loads(response.text)['data']
                                     except Exception as err:
-                                        print(f"Ошибка в json-данных для [{response.text}]: {err}")
+                                        # print(f"Ошибка в json-данных для [{response.text}]: {err}")
                                     result = [film['kinopoisk_id'] for film in result_search_json if film['kinopoisk_id']]
                                     kinopoisk_ids = list(set(kinopoisk_ids) & set(result)) if kinopoisk_ids else result
                         result = kinopoisk_ids
@@ -110,10 +99,17 @@ class RemoteModel(models.BaseModel):
                         result = [film['kinopoisk_id'] for film in result_search_json if film['kinopoisk_id']]
 
                 elif rpc_method == 'listRead':
-                    # примерная страница page в ссылке "https://kinobd.ru/api/films?page=...", на которой находится film_id
                     read_film_ids = list(args[0])
-                    read_films_data = asyncio.run(self.get_datas_from_api(read_film_ids))
-                    result = [read_film_data for read_film_data in read_films_data if read_film_data]
+                    executor_read_films_data = []
+                    with futures.ThreadPoolExecutor(max_workers=25) as executor:
+                        for film_id in read_film_ids:
+                            executor_read_film_data = executor.submit(self.get_film_data_from_api, film_id)
+                            executor_read_films_data.append(executor_read_film_data)
+                    result = []
+                    for future_read_film_data in futures.as_completed(executor_read_films_data, timeout=300):
+                        read_film_data = future_read_film_data.result()
+                        if read_film_data:
+                            result.append(read_film_data)
             else:
                 result = []
         except Exception as exc:
