@@ -71,7 +71,7 @@
           </group>
           <notebook>
             <page string="В кинотеатрах">
-              <field name="cinema_ids"/>
+              <field name="cinema_ids" domain="[('is_cinema', '=', True)]"/>
             </page>
             <page string="Просмотры">
               <field name="show_film_ids" context="{'default_cinema_id': context.get('cinema_id')}">

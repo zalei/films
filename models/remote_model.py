@@ -88,7 +88,7 @@ class RemoteModel(models.BaseModel):
                                     try:
                                         result_search_json = json.loads(response.text)['data']
                                     except Exception as err:
-                                        # print(f"Ошибка в json-данных для [{response.text}]: {err}")
+                                        print(f"Ошибка в json-данных для [{response.text}]: {err}")
                                     result = [film['kinopoisk_id'] for film in result_search_json if film['kinopoisk_id']]
                                     kinopoisk_ids = list(set(kinopoisk_ids) & set(result)) if kinopoisk_ids else result
                         result = kinopoisk_ids
